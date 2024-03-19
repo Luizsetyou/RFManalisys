@@ -1,0 +1,41 @@
+SELECT
+    *,
+    CASE
+        WHEN Final > CURRENT_DATE() THEN 1
+        WHEN Final BETWEEN (CURRENT_DATE()) AND (DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY)) THEN 4
+        ELSE NULL
+    END AS recencia
+FROM (
+    SELECT
+        cv.cpf,
+        aggregated_data.valorTotalPago,
+        aggregated_data.numberOfOrders,
+        cv.dataCompra,
+        cv.nomeCpf,
+        cv.telefone,
+        cv.tipoDeCompra,
+        cv.email,
+        cv.formaPagamento,
+        QNT1,
+        cupom,
+        brindeDesconto,
+        aggregated_data.valorTotalPago / aggregated_data.numberOfOrders AS media_custo_pedido,  -- Adiciona a média de custo dos pedidos
+        DATE_ADD(cv.dataCompra, INTERVAL QNT1 MONTH) AS Final  -- Calcula a data de fim de uso com base na quantidade de meses de uso
+    FROM (
+        SELECT
+            cpf,
+            MAX(dataCompra) as LatestCompra
+        FROM `setyou-prd.controle_de_vendas.controle_de_vendas`
+        GROUP BY cpf
+    ) AS latest_compras
+    INNER JOIN `setyou-prd.controle_de_vendas.controle_de_vendas` cv ON latest_compras.cpf = cv.cpf AND latest_compras.LatestCompra = cv.dataCompra
+    INNER JOIN (
+        SELECT
+            cpf,
+            SUM(valorPago) AS valorTotalPago,
+            COUNT(cpf) AS numberOfOrders
+        FROM `setyou-prd.controle_de_vendas.controle_de_vendas`
+        GROUP BY cpf
+    ) AS aggregated_data ON cv.cpf = aggregated_data.cpf
+) AS final_data
+ORDER BY dataCompra;
