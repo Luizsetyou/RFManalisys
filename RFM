@@ -23,6 +23,12 @@ FROM (
         cupom,
         brindeDesconto,
         aggregated_data.valorTotalPago / aggregated_data.numberOfOrders AS media_custo_pedido,  -- Adiciona a média de custo dos pedidos
+        CASE
+            WHEN aggregated_data.numberOfOrders = 1 THEN 1
+            WHEN aggregated_data.numberOfOrders = 2 THEN 2
+            WHEN aggregated_data.numberOfOrders BETWEEN 3 AND 4 THEN 3
+            ELSE 4
+        END AS frequency_score,  -- Adiciona a nota de frequência
         DATE_ADD(cv.dataCompra, INTERVAL QNT1 MONTH) AS Final  -- Calcula a data de fim de uso com base na quantidade de meses de uso
     FROM (
         SELECT
