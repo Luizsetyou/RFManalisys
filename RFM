@@ -4,7 +4,7 @@ SELECT
     *,
     -- Calcula a recência com base na data mais recente da compra
     CASE
-        WHEN final > CURRENT_DATE() THEN 0  -- Se a data final for maior que a data atual, recência é 0
+        WHEN final > CURRENT_DATE() THEN 4  -- Se a data final for maior que a data atual, recência é 0
         WHEN final BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY) AND CURRENT_DATE() THEN 4  -- final entre 30 dias atrás e hoje, recência é 4
         WHEN final BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY) THEN 3  -- final entre 90 e 30 dias atrás, recência é 3
         WHEN final BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 180 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY) THEN 2  -- final entre 180 e 90 dias atrás, recência é 2
@@ -25,8 +25,8 @@ FROM (
         DATE_ADD(cv.dataCompra, INTERVAL QNT1 MONTH) AS final,  -- Calcula a data de fim de uso com base na quantidade de meses de uso
         cv.tipoDeCompra,
         cv.formaPagamento,
-        cupom,
-        brindeDesconto,
+        cv.cupom,
+        cv.brindeDesconto,
         aggregated_data.valorTotalPago / aggregated_data.numberOfOrders AS media_custo_pedido,  -- Adiciona a média de custo dos pedidos
         CASE
             WHEN aggregated_data.numberOfOrders = 1 THEN 1  -- Se houver apenas uma ordem, a nota de frequência é 1
@@ -53,6 +53,8 @@ FROM (
         GROUP BY cpf
     ) AS aggregated_data ON cv.cpf = aggregated_data.cpf
 ) AS final_data
+--WHERE final_data.formaPagamento != 'Brinde' -- Exclui linhas com "brinde" na coluna "formaPagamento"
+WHERE LOWER(final_data.formaPagamento) != 'brinde' -- Exclui linhas com "brinde" na coluna "formaPagamento"
 ORDER BY dataCompra;
 --------------------------------------------------------------------------------------------------------------------------------------------------
 --SEPARAÇÃO EM QUARTIS
