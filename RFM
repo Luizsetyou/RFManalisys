@@ -93,4 +93,105 @@ FROM (
 ) AS FinalData;
 
 --------------------------------------------------------------------------------------------------------------------------------------------------
+## TESTES
+
+SELECT
+    *,
+    CASE
+        WHEN numberOfOrders = 1 THEN 1  -- Se houver apenas uma ordem, a nota de frequência é 1
+        WHEN numberOfOrders = 2 THEN 2  -- Se houver duas ordens, a nota de frequência é 2
+        WHEN numberOfOrders BETWEEN 3 AND 4 THEN 3  -- Se houver entre 3 e 4 ordens, a nota de frequência é 3
+        ELSE 4  -- Caso contrário, a nota de frequência é 4
+    END AS frequency  -- Adiciona a nota de frequência
+FROM (
+    -- Seleciona os dados agregados necessários para calcular a frequência e a recência
+    SELECT
+        final_data.idSetYou,
+        final_data.idLandbot,
+        final_data.nomeCpf,
+        final_data.cpf,
+        final_data.telefone,
+        final_data.email,
+        final_data.valorTotalPago,
+        final_data.numberOfOrders,
+        final_data.QNT1,
+        final_data.dataCompra,
+        final_data.tipoDeCompra,
+        final_data.formaPagamento,
+        final_data.cupom,
+        final_data.brindeDesconto,
+        final_data.media_custo_pedido
+    FROM (
+        -- Seleciona a data mais recente da compra e os dados agregados para cada CPF
+        SELECT
+            cv.idSetYou,
+            cv.idLandbot,
+            cv.nomeCpf,
+            cv.cpf,
+            cv.telefone,
+            cv.email,
+            aggregated_data.valorTotalPago,
+            aggregated_data.numberOfOrders,
+            cv.QNT1,
+            cv.dataCompra,
+            cv.tipoDeCompra,
+            cv.formaPagamento,
+            cv.cupom,
+            cv.brindeDesconto,
+            ROUND(aggregated_data.valorTotalPago / aggregated_data.numberOfOrders, 2) AS media_custo_pedido
+        FROM (
+            -- Seleciona a data mais recente da compra para cada CPF
+            SELECT
+                cpf,
+                MAX(dataCompra) as LatestCompra
+            FROM `setyou-prd.teste.cvMaiorQueZero`
+            GROUP BY cpf
+        ) AS latest_compras
+        INNER JOIN `setyou-prd.teste.cvMaiorQueZero` cv ON latest_compras.cpf = cv.cpf AND latest_compras.LatestCompra = cv.dataCompra
+        INNER JOIN (
+            -- Seleciona os dados agregados (valor total pago e número de pedidos) para cada CPF
+            SELECT
+                cpf,
+                ROUND(SUM(valorPago), 2) AS valorTotalPago,
+                COUNT(cpf) AS numberOfOrders
+            FROM `setyou-prd.teste.cvMaiorQueZero`
+            GROUP BY cpf
+        ) AS aggregated_data ON cv.cpf = aggregated_data.cpf
+    ) AS final_data
+) AS final_data
+ORDER BY dataCompra;
+
+----------------------------------------------
+SELECT
+    main.idSetYou,
+    main.idLandbot,
+    main.nomeCpf,
+    main.cpf,
+    main.telefone,
+    main.email,
+    main.QNT1,
+    main.dataCompra,
+    DATE_ADD(main.dataCompra, INTERVAL main.QNT1 MONTH) AS final_date,  
+    main.tipoDeCompra,
+    main.formaPagamento,
+    main.cupom,
+    main.brindeDesconto,
+    CASE
+        WHEN DATE_ADD(main.dataCompra, INTERVAL main.QNT1 MONTH) > CURRENT_DATE() THEN 4  
+        WHEN DATE_ADD(main.dataCompra, INTERVAL main.QNT1 MONTH) BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY) AND CURRENT_DATE() THEN 4  
+        WHEN DATE_ADD(main.dataCompra, INTERVAL main.QNT1 MONTH) BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY) THEN 3  
+        WHEN DATE_ADD(main.dataCompra, INTERVAL main.QNT1 MONTH) BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 180 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY) THEN 2  
+        WHEN DATE_ADD(main.dataCompra, INTERVAL main.QNT1 MONTH) < DATE_SUB(CURRENT_DATE(), INTERVAL 180 DAY) THEN 1  
+    END AS recency,
+    (
+        SELECT ROUND(SUM(valorPago), 2)
+        FROM `setyou-prd.teste.cvMaiorQueZero` sub
+        WHERE sub.cpf = main.cpf
+    ) AS valorTotalPago,
+    (
+        SELECT COUNT(cpf)
+        FROM `setyou-prd.teste.cvMaiorQueZero` sub
+        WHERE sub.cpf = main.cpf
+    ) AS numberOfOrders
+FROM `setyou-prd.teste.cvMaiorQueZero` main;
 --------------------------------------------------------------------------------------------------------------------------------------------------
