@@ -1,3 +1,31 @@
+
+
+
+
+##agrupar usando uma chave
+WITH RankedPurchases AS (
+  SELECT
+    idLandbot,
+    nomeCpf,
+    email,
+    dataCompra,
+    idSetYou,
+    ROW_NUMBER() OVER (PARTITION BY email ORDER BY dataCompra DESC) AS rank
+  FROM
+    `setyou-prd.controle_de_vendas.controle_de_vendas`
+)
+
+SELECT
+    idLandbot,
+    nomeCpf,
+    email,
+    dataCompra,
+    idSetYou
+FROM
+  RankedPurchases
+WHERE
+  rank = 1;
+----------------------------------------------------------------------------------------------------------------------------------------------------
 --ANÁLISE RFM PARCIAL - RECÊNCIA E FREQUÊNCIA
 WITH RankedData AS (
     SELECT
