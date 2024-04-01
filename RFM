@@ -1,4 +1,62 @@
 --ANÁLISE RFM PARCIAL - RECÊNCIA E FREQUÊNCIA
+WITH RankedData AS (
+    SELECT
+        *,
+        ROW_NUMBER() OVER(PARTITION BY cpf ORDER BY dataCompra DESC) AS row_num
+    FROM (
+        SELECT
+            cv.idSetYou,
+            cv.idLandbot,
+            cv.nomeCpf,
+            cv.cpf,
+            cv.telefone,
+            cv.email,
+            aggregated_data.valorTotalPago,
+            aggregated_data.numberOfOrders,
+            cv.QNT1,
+            cv.dataCompra,
+            DATE_ADD(cv.dataCompra, INTERVAL QNT1 MONTH) AS final,
+            cv.tipoDeCompra,
+            cv.formaPagamento,
+            cv.cupom,
+            cv.brindeDesconto,
+            ROUND(aggregated_data.valorTotalPago / aggregated_data.numberOfOrders, 2) AS media_custo_pedido,
+            CASE
+                WHEN aggregated_data.numberOfOrders = 1 THEN 1
+                WHEN aggregated_data.numberOfOrders = 2 THEN 2
+                WHEN aggregated_data.numberOfOrders BETWEEN 3 AND 4 THEN 3
+                ELSE 4
+            END AS frequency,
+            CASE
+                WHEN DATE_ADD(cv.dataCompra, INTERVAL QNT1 MONTH) > CURRENT_DATE() THEN 4
+                WHEN DATE_ADD(cv.dataCompra, INTERVAL QNT1 MONTH) BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY) AND CURRENT_DATE() THEN 4
+                WHEN DATE_ADD(cv.dataCompra, INTERVAL QNT1 MONTH) BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY) THEN 3
+                WHEN DATE_ADD(cv.dataCompra, INTERVAL QNT1 MONTH) BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 180 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY) THEN 2
+                WHEN DATE_ADD(cv.dataCompra, INTERVAL QNT1 MONTH) < DATE_SUB(CURRENT_DATE(), INTERVAL 180 DAY) THEN 1
+            END AS recency
+        FROM (
+            SELECT
+                cpf,
+                MAX(dataCompra) AS LatestCompra
+            FROM `setyou-prd.teste.cvMaiorQueZero`
+            GROUP BY cpf
+        ) AS latest_compras
+        INNER JOIN `setyou-prd.teste.cvMaiorQueZero` cv ON latest_compras.cpf = cv.cpf AND latest_compras.LatestCompra = cv.dataCompra
+        INNER JOIN (
+            SELECT
+                cpf,
+                ROUND(SUM(valorPago), 2) AS valorTotalPago,
+                COUNT(cpf) AS numberOfOrders
+            FROM `setyou-prd.teste.cvMaiorQueZero`
+            GROUP BY cpf
+        ) AS aggregated_data ON cv.cpf = aggregated_data.cpf
+    ) AS final_data
+)
+SELECT *
+FROM RankedData
+WHERE row_num = 1
+ORDER BY dataCompra;
+---------------------------------------
 --Essa não filtra clientes bloqueados, para esse filtro é necessário usar a próxima função
 
 SELECT
