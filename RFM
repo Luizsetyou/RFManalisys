@@ -1,156 +1,70 @@
-
-
-
-
-##agrupar usando uma chave
-WITH RankedPurchases AS (
-  SELECT
-    idLandbot,
-    nomeCpf,
-    email,
-    dataCompra,
-    idSetYou,
-    ROW_NUMBER() OVER (PARTITION BY email ORDER BY dataCompra DESC) AS rank
-  FROM
-    `setyou-prd.controle_de_vendas.controle_de_vendas`
-)
-
-SELECT
-    idLandbot,
-    nomeCpf,
-    email,
-    dataCompra,
-    idSetYou
-FROM
-  RankedPurchases
-WHERE
-  rank = 1;
-----------------------------------------------------------------------------------------------------------------------------------------------------
---ANÁLISE RFM PARCIAL - RECÊNCIA E FREQUÊNCIA
-WITH RankedData AS (
-    SELECT
-        *,
-        ROW_NUMBER() OVER(PARTITION BY cpf ORDER BY dataCompra DESC) AS row_num
-    FROM (
-        SELECT
-            cv.idSetYou,
-            cv.idLandbot,
-            cv.nomeCpf,
-            cv.cpf,
-            cv.telefone,
-            cv.email,
-            aggregated_data.valorTotalPago,
-            aggregated_data.numberOfOrders,
-            cv.QNT1,
-            cv.dataCompra,
-            DATE_ADD(cv.dataCompra, INTERVAL QNT1 MONTH) AS final,
-            cv.tipoDeCompra,
-            cv.formaPagamento,
-            cv.cupom,
-            cv.brindeDesconto,
-            ROUND(aggregated_data.valorTotalPago / aggregated_data.numberOfOrders, 2) AS media_custo_pedido,
-            CASE
-                WHEN aggregated_data.numberOfOrders = 1 THEN 1
-                WHEN aggregated_data.numberOfOrders = 2 THEN 2
-                WHEN aggregated_data.numberOfOrders BETWEEN 3 AND 4 THEN 3
-                ELSE 4
-            END AS frequency,
-            CASE
-                WHEN DATE_ADD(cv.dataCompra, INTERVAL QNT1 MONTH) > CURRENT_DATE() THEN 4
-                WHEN DATE_ADD(cv.dataCompra, INTERVAL QNT1 MONTH) BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY) AND CURRENT_DATE() THEN 4
-                WHEN DATE_ADD(cv.dataCompra, INTERVAL QNT1 MONTH) BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY) THEN 3
-                WHEN DATE_ADD(cv.dataCompra, INTERVAL QNT1 MONTH) BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 180 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY) THEN 2
-                WHEN DATE_ADD(cv.dataCompra, INTERVAL QNT1 MONTH) < DATE_SUB(CURRENT_DATE(), INTERVAL 180 DAY) THEN 1
-            END AS recency
-        FROM (
-            SELECT
-                cpf,
-                MAX(dataCompra) AS LatestCompra
-            FROM `setyou-prd.teste.cvMaiorQueZero`
-            GROUP BY cpf
-        ) AS latest_compras
-        INNER JOIN `setyou-prd.teste.cvMaiorQueZero` cv ON latest_compras.cpf = cv.cpf AND latest_compras.LatestCompra = cv.dataCompra
-        INNER JOIN (
-            SELECT
-                cpf,
-                ROUND(SUM(valorPago), 2) AS valorTotalPago,
-                COUNT(cpf) AS numberOfOrders
-            FROM `setyou-prd.teste.cvMaiorQueZero`
-            GROUP BY cpf
-        ) AS aggregated_data ON cv.cpf = aggregated_data.cpf
-    ) AS final_data
-)
-SELECT *
-FROM RankedData
-WHERE row_num = 1
-ORDER BY dataCompra;
----------------------------------------
---Essa não filtra clientes bloqueados, para esse filtro é necessário usar a próxima função
-
-SELECT
-    *,
-    -- Calcula a recência com base na data mais recente da compra
-    CASE
-        WHEN final > CURRENT_DATE() THEN 4  -- Se a data final for maior que a data atual, recência é 0
-        WHEN final BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY) AND CURRENT_DATE() THEN 4  -- final entre 30 dias atrás e hoje, recência é 4
-        WHEN final BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY) THEN 3  -- final entre 90 e 30 dias atrás, recência é 3
-        WHEN final BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 180 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY) THEN 2  -- final entre 180 e 90 dias atrás, recência é 2
-        WHEN final < DATE_SUB(CURRENT_DATE(), INTERVAL 180 DAY) THEN 1  -- Se a data final for mais do que 180 dias atrás, recência é 1
-    END AS recency,
-
-FROM (
-    -- Seleciona os dados agregados necessários para calcular recência e frequência
-    SELECT
-        cv.idSetYou,
-        cv.idLandbot,
-        cv.nomeCpf,
-        cv.cpf,
-        cv.telefone,
-        cv.email,
-        aggregated_data.valorTotalPago,
-        aggregated_data.numberOfOrders,
-        cv.QNT1,
-        cv.dataCompra,
-        DATE_ADD(cv.dataCompra, INTERVAL QNT1 MONTH) AS final,  -- Calcula a data de fim de uso com base na quantidade de meses de uso
-        cv.tipoDeCompra,
-        cv.formaPagamento,
-        cv.cupom,
-        cv.brindeDesconto,
-        -- Arredonda a média de custo dos pedidos
-        ROUND(aggregated_data.valorTotalPago / aggregated_data.numberOfOrders, 2) AS media_custo_pedido,
-        CASE
-            WHEN aggregated_data.numberOfOrders = 1 THEN 1  -- Se houver apenas uma ordem, a nota de frequência é 1
-            WHEN aggregated_data.numberOfOrders = 2 THEN 2  -- Se houver duas ordens, a nota de frequência é 2
-            WHEN aggregated_data.numberOfOrders BETWEEN 3 AND 4 THEN 3  -- Se houver entre 3 e 4 ordens, a nota de frequência é 3
-            ELSE 4  -- Caso contrário, a nota de frequência é 4
-        END AS frequency,  -- Adiciona a nota de frequência
-    FROM (
-        -- Seleciona a data mais recente da compra para cada CPF
-        SELECT
-            cpf,
-            MAX(dataCompra) as LatestCompra
-        FROM `setyou-prd.teste.sem_cpf`
-        GROUP BY cpf
-    ) AS latest_compras
-    INNER JOIN `setyou-prd.teste.sem_cpf` cv ON latest_compras.cpf = cv.cpf AND latest_compras.LatestCompra = cv.dataCompra
-    INNER JOIN (
-        -- Seleciona os dados agregados (valor total pago e número de pedidos) para cada CPF
-        SELECT
-            cpf,
-            ROUND(SUM(valorPago), 2) AS valorTotalPago,
-            COUNT(cpf) AS numberOfOrders
-        FROM `setyou-prd.teste.sem_cpf`
-        GROUP BY cpf
-    ) AS aggregated_data ON cv.cpf = aggregated_data.cpf
-) AS final_data
-ORDER BY dataCompra;
---------------------------------------------------------------------------------------------------------------------------------------------------
---SEPARAÇÃO EM QUARTIS
-
-WITH RankedData AS (
+WITH cvMaiorQueZero AS (
+    SELECT * FROM `setyou-prd.controle_de_vendas.controle_de_vendas`
+),
+RFM_parcial AS (  
+  WITH RankedData AS (
+      SELECT
+          *,
+          ROW_NUMBER() OVER(PARTITION BY cpf ORDER BY dataCompra DESC) AS row_num
+      FROM (
+          SELECT
+              cv.idSetYou,
+              cv.idLandbot,
+              cv.nomeCpf,
+              cv.cpf,
+              cv.telefone,
+              cv.email,
+              aggregated_data.valorTotalPago,
+              aggregated_data.numberOfOrders as numberOfOrders,
+              cv.QNT1,
+              cv.dataCompra,
+              DATE_ADD(cv.dataCompra, INTERVAL QNT1 MONTH) AS final,
+              cv.tipoDeCompra,
+              cv.formaPagamento,
+              cv.cupom,
+              cv.brindeDesconto,
+              ROUND(aggregated_data.valorTotalPago / aggregated_data.numberOfOrders, 2) AS media_custo_pedido,
+              CASE
+                  WHEN aggregated_data.numberOfOrders = 1 THEN 1
+                  WHEN aggregated_data.numberOfOrders = 2 THEN 2
+                  WHEN aggregated_data.numberOfOrders BETWEEN 3 AND 4 THEN 3
+                  ELSE 4
+              END AS frequency,
+              CASE
+                  WHEN DATE_ADD(cv.dataCompra, INTERVAL QNT1 MONTH) > CURRENT_DATE() THEN 4
+                  WHEN DATE_ADD(cv.dataCompra, INTERVAL QNT1 MONTH) BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY) AND CURRENT_DATE() THEN 4
+                  WHEN DATE_ADD(cv.dataCompra, INTERVAL QNT1 MONTH) BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY) THEN 3
+                  WHEN DATE_ADD(cv.dataCompra, INTERVAL QNT1 MONTH) BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 180 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY) THEN 2
+                  WHEN DATE_ADD(cv.dataCompra, INTERVAL QNT1 MONTH) < DATE_SUB(CURRENT_DATE(), INTERVAL 180 DAY) THEN 1
+              END AS recency
+          FROM (
+              SELECT
+                  cpf,
+                  MAX(dataCompra) AS LatestCompra
+              FROM cvMaiorQueZero
+              GROUP BY cpf
+          ) AS latest_compras
+          INNER JOIN cvMaiorQueZero cv ON latest_compras.cpf = cv.cpf AND latest_compras.LatestCompra = cv.dataCompra
+          INNER JOIN (
+              SELECT
+                  cpf,
+                  ROUND(SUM(valorPago), 2) AS valorTotalPago,
+                  COUNT(cpf) AS numberOfOrders
+              FROM cvMaiorQueZero
+              GROUP BY cpf
+          ) AS aggregated_data ON cv.cpf = aggregated_data.cpf
+      ) AS final_data
+  )
+  SELECT *
+  FROM RankedData
+  WHERE row_num = 1
+  ORDER BY dataCompra
+),
+## SEPARAÇÃO EM QUARTIS
+RankedDataB AS (
     SELECT *,
         ROW_NUMBER() OVER (ORDER BY valorTotalPago) AS rank
-    FROM setyou-prd.teste.RFM_parcial
+    FROM RFM_parcial
 )
 SELECT 
     idSetYou,
@@ -175,109 +89,6 @@ SELECT
 FROM (
     SELECT *,
         NTILE(4) OVER (ORDER BY rank) AS monetary_value
-    FROM RankedData
-) AS FinalData;
+    FROM RankedDataB
+) AS FinalData
 
---------------------------------------------------------------------------------------------------------------------------------------------------
-## TESTES
-
-SELECT
-    *,
-    CASE
-        WHEN numberOfOrders = 1 THEN 1  -- Se houver apenas uma ordem, a nota de frequência é 1
-        WHEN numberOfOrders = 2 THEN 2  -- Se houver duas ordens, a nota de frequência é 2
-        WHEN numberOfOrders BETWEEN 3 AND 4 THEN 3  -- Se houver entre 3 e 4 ordens, a nota de frequência é 3
-        ELSE 4  -- Caso contrário, a nota de frequência é 4
-    END AS frequency  -- Adiciona a nota de frequência
-FROM (
-    -- Seleciona os dados agregados necessários para calcular a frequência e a recência
-    SELECT
-        final_data.idSetYou,
-        final_data.idLandbot,
-        final_data.nomeCpf,
-        final_data.cpf,
-        final_data.telefone,
-        final_data.email,
-        final_data.valorTotalPago,
-        final_data.numberOfOrders,
-        final_data.QNT1,
-        final_data.dataCompra,
-        final_data.tipoDeCompra,
-        final_data.formaPagamento,
-        final_data.cupom,
-        final_data.brindeDesconto,
-        final_data.media_custo_pedido
-    FROM (
-        -- Seleciona a data mais recente da compra e os dados agregados para cada CPF
-        SELECT
-            cv.idSetYou,
-            cv.idLandbot,
-            cv.nomeCpf,
-            cv.cpf,
-            cv.telefone,
-            cv.email,
-            aggregated_data.valorTotalPago,
-            aggregated_data.numberOfOrders,
-            cv.QNT1,
-            cv.dataCompra,
-            cv.tipoDeCompra,
-            cv.formaPagamento,
-            cv.cupom,
-            cv.brindeDesconto,
-            ROUND(aggregated_data.valorTotalPago / aggregated_data.numberOfOrders, 2) AS media_custo_pedido
-        FROM (
-            -- Seleciona a data mais recente da compra para cada CPF
-            SELECT
-                cpf,
-                MAX(dataCompra) as LatestCompra
-            FROM `setyou-prd.teste.cvMaiorQueZero`
-            GROUP BY cpf
-        ) AS latest_compras
-        INNER JOIN `setyou-prd.teste.cvMaiorQueZero` cv ON latest_compras.cpf = cv.cpf AND latest_compras.LatestCompra = cv.dataCompra
-        INNER JOIN (
-            -- Seleciona os dados agregados (valor total pago e número de pedidos) para cada CPF
-            SELECT
-                cpf,
-                ROUND(SUM(valorPago), 2) AS valorTotalPago,
-                COUNT(cpf) AS numberOfOrders
-            FROM `setyou-prd.teste.cvMaiorQueZero`
-            GROUP BY cpf
-        ) AS aggregated_data ON cv.cpf = aggregated_data.cpf
-    ) AS final_data
-) AS final_data
-ORDER BY dataCompra;
-
-----------------------------------------------
-SELECT
-    main.idSetYou,
-    main.idLandbot,
-    main.nomeCpf,
-    main.cpf,
-    main.telefone,
-    main.email,
-    main.QNT1,
-    main.dataCompra,
-    DATE_ADD(main.dataCompra, INTERVAL main.QNT1 MONTH) AS final_date,  
-    main.tipoDeCompra,
-    main.formaPagamento,
-    main.cupom,
-    main.brindeDesconto,
-    CASE
-        WHEN DATE_ADD(main.dataCompra, INTERVAL main.QNT1 MONTH) > CURRENT_DATE() THEN 4  
-        WHEN DATE_ADD(main.dataCompra, INTERVAL main.QNT1 MONTH) BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY) AND CURRENT_DATE() THEN 4  
-        WHEN DATE_ADD(main.dataCompra, INTERVAL main.QNT1 MONTH) BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY) THEN 3  
-        WHEN DATE_ADD(main.dataCompra, INTERVAL main.QNT1 MONTH) BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 180 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY) THEN 2  
-        WHEN DATE_ADD(main.dataCompra, INTERVAL main.QNT1 MONTH) < DATE_SUB(CURRENT_DATE(), INTERVAL 180 DAY) THEN 1  
-    END AS recency,
-    (
-        SELECT ROUND(SUM(valorPago), 2)
-        FROM `setyou-prd.teste.cvMaiorQueZero` sub
-        WHERE sub.cpf = main.cpf
-    ) AS valorTotalPago,
-    (
-        SELECT COUNT(cpf)
-        FROM `setyou-prd.teste.cvMaiorQueZero` sub
-        WHERE sub.cpf = main.cpf
-    ) AS numberOfOrders
-FROM `setyou-prd.teste.cvMaiorQueZero` main;
---------------------------------------------------------------------------------------------------------------------------------------------------
