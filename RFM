@@ -9,7 +9,7 @@ RFM_parcial AS (
       FROM (
           SELECT
               cv.idSetYou,
-              cv.idLandbot,
+              cv.idChatbot,
               cv.nomeCpf,
               cv.cpf,
               cv.telefone,
@@ -67,8 +67,8 @@ RankedDataB AS (
     FROM RFM_parcial
 )
 SELECT 
-    idSetYou,
-    idLandbot,
+    DISTINCT idSetYou,
+    idChatbot,
     nomeCpf,
     cpf,
     telefone,
